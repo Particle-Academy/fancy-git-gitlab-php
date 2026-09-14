@@ -9,6 +9,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-13
+
+### Fixed
+
+- **Every GitLab call now works. In 0.1.0–0.2.0 none of them did.**
+  `repository()`, `listReviews()`, `getReview()`, `createReview()`, `compare()`
+  and `checks()` all threw `Error: Call to undefined method Gitlab\Client::api()`:
+  the adapter was written against php-gitlab-api's old `api('projects')`
+  accessor, which the `^12.1` it required does not have. Only `kind()` and
+  `identify()` ever ran. Had the accessor existed, two more defects were behind
+  it: the project path was encoded twice (`group%252Fapp`, a 404 on GitLab), and
+  a self-managed base URL's path was dropped, so an instance under
+  `https://example.com/gitlab` was addressed at the host root.
+
+  **What you must do:** nothing, unless you worked around it.
+
+### Changed
+
+- **BREAKING — the constructor takes a `FancyGit\GitLab\GitLabClient`, not a
+  `Gitlab\Client`.** `m4tthumphrey/php-gitlab-api` is gone (it fails the suite's
+  92-day freshness bar), replaced by a small first-party REST v4 client over the
+  Guzzle this package already required.
+
+  **What you must do:** if you call `GitLabProvider::withToken($token, $baseUrl)`,
+  nothing. If you called `new GitLabProvider($gitlabClient, $baseUrl)`, build the
+  client instead: `new GitLabProvider(new GitLabClient($baseUrl, $token))` —
+  and pass `TokenType::OAuth` or `TokenType::CiJob` as the third argument if you
+  had authenticated that way, or your own Guzzle client as the fourth. Because no
+  network method worked before, the only code this can break is code that used
+  `identify()` on a hand-built client.
+
+- **BREAKING — the base URL is validated.** It must be an `https` instance URL
+  with no credentials, query, fragment or dot segments, and not the `/api/v4` URL.
+  Anything else throws `GitException` (`invalid_argument`) at construction.
+
+  **What you must do:** if you pass `http://…`, move the instance to https — over
+  plain http the token is readable by anything on the path. If you pass
+  `…/api/v4`, drop that suffix.
+
+- **Failures are the contract's `FancyGit\Error\GitException`**, instead of
+  php-gitlab-api's exceptions: 401/403 → `auth`, 404 → `not_found`, 405 →
+  `unsupported`, 409 → `conflict`, 400/422 → `invalid_argument` (with GitLab's
+  field messages), 429 → `rate_limited` with "Retry after N seconds" from
+  `Retry-After`, anything else → `unknown`. `getCode()` is the HTTP status.
+  **What you must do:** if you caught `Gitlab\Exception\*`, catch `GitException`
+  — though as above, nothing could have reached those catches.
+
+- `particle-academy/fancy-git` floor raised from `>=0.1` to `>=0.1.1 <2.0`:
+  `GitErrorCode::InvalidArgument` does not exist in 0.1.0. **No action needed**
+  unless you pinned fancy-git to exactly 0.1.0, which also lacks that release's
+  security fix.
+
+### Added
+
+- `listReviews()` honours `cursor` (the page number) and returns `nextCursor`
+  and `total` from GitLab's `X-Next-Page` / `X-Total`, as the contract allows.
+  `limit` is kept within GitLab's 1–100.
+- `checks()` reads every page of pipelines for the revision instead of the first
+  twenty.
+- Self-managed instances under a relative URL root. `identify()` strips the root
+  from https remotes, so the owner is the namespace rather than `gitlab/group`.
+- `GitLabClient::getAll()` walks offset and keyset pagination, and stops with an
+  error past its page limit rather than returning a list that reads as complete.
+
+### Security
+
+- **Requests only go to the configured instance.** Redirects are never followed
+  — Guzzle strips `Authorization` on a cross-origin redirect but would forward
+  GitLab's `PRIVATE-TOKEN` — and this is set per request, so it holds for an
+  injected client configured to follow them. A `Link` pagination URL is followed
+  only if it points back inside the instance's `/api/v4/`.
+- **A ref from another instance is refused before any request.** A ref whose
+  `baseUrl` differs from the provider's would otherwise have sent this instance's
+  token to whatever project has the same path here, and `createReview()` would
+  have opened a merge request on it. Refs without a `baseUrl` are unaffected.
+- **The token stays out of messages, dumps and storage.** It is held as a
+  `SensitiveParameterValue`; `var_dump` / `print_r` show `[REDACTED]`; the client
+  refuses to serialize; a blank token or one containing whitespace or CR/LF is
+  rejected without being echoed; and Guzzle's exceptions, whose requests carry the
+  header, are never chained.
+
+### Removed
+
+- `m4tthumphrey/php-gitlab-api` and `http-interop/http-factory-guzzle`, and with
+  them eleven transitive packages (`php-http/*`, `psr/cache`,
+  `symfony/options-resolver`, …). **No action needed.** The `php-http/discovery`
+  plugin permission in `composer.json` went with them.
+
 ## [0.2.0] — 2026-08-07
 
 ### Changed
