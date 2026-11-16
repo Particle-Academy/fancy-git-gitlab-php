@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   **What you must do:** nothing. Only a script that looks runs up by the old
   file (`gh run list --workflow=release-gate.yml`) needs `publish.yml` instead.
+- Rebranded the display name to Fancy Dev Kit (README and package description). Package names, the npm scope, URLs and the `fancy-ui` MCP id are unchanged.
 
 ## [0.3.0] — 2026-09-13
 
