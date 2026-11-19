@@ -4,10 +4,17 @@
     "type":"library","license":"MIT",
     "repositories":[{"type":"vcs","url":"https://github.com/Particle-Academy/fancy-git-php"}],
     "require":{"php":"^8.4","particle-academy/fancy-git":">=0.1.1 <2.0","guzzlehttp/guzzle":"^7.15.1"},
-    "require-dev":{"phpunit/phpunit":"^11.0|^12.0"},
     "autoload":{"psr-4":{"FancyGit\\GitLab\\":"src/"}},
     "autoload-dev":{"psr-4":{"FancyGit\\GitLab\\Tests\\":"tests/"}},
-    "scripts":{"test":"phpunit"},
+    "scripts":{"test":"pest"},
     "minimum-stability":"stable","prefer-stable":true,
-    "support":{"issues":"https://github.com/Particle-Academy/fancy-git-gitlab-php/issues","source":"https://github.com/Particle-Academy/fancy-git-gitlab-php"}
+    "support":{"issues":"https://github.com/Particle-Academy/fancy-git-gitlab-php/issues","source":"https://github.com/Particle-Academy/fancy-git-gitlab-php"},
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "require-dev": {
+        "pestphp/pest": "^5.0"
+    }
 }

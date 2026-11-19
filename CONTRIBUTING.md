@@ -10,13 +10,13 @@ works in this repo.
 - `src/GitLabClient.php` — the small first-party GitLab REST v4 client (with
   `GitLabResponse` and the `TokenType` enum).
 - `src/GitLabProvider.php` — the fancy-git provider over that client.
-- `tests/` — the PHPUnit suite, helpers in `tests/Support/`.
+- `tests/` — the Pest suite, helpers in `tests/Support/`.
 
 ## Commands
 
 ```bash
 composer install
-composer test   # phpunit
+composer test   # pest
 ```
 
 ## Parity
