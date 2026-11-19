@@ -47,6 +47,12 @@ final class GitLabClient
     /** Longest pagination `Link` header parsed. GitLab's are a few hundred bytes; a longer one is refused, so a hostile server cannot make the client do unbounded work. */
     public const MAX_LINK_HEADER_LENGTH = 8 * 1024;
 
+    /** How many times a GET that answered 5xx is sent again. Never a POST. */
+    public const GET_RETRIES = 2;
+
+    /** The wait before retry n is n times this. */
+    public const RETRY_DELAY_MS = 100;
+
     private readonly string $baseUrl;
 
     private readonly ?\SensitiveParameterValue $token;
@@ -272,15 +278,25 @@ final class GitLabClient
             $headers += $this->tokenType->headers($this->token->getValue());
         }
 
-        try {
-            $response = $this->http->send(new Request($method, $url, $headers, $body), [
-                'allow_redirects' => false,
-                'http_errors' => false,
-            ]);
-        } catch (GuzzleException $e) {
-            // Message only. The exception's request carries the credential header,
-            // so it is not chained where a logger could serialize it.
-            throw new GitException(GitErrorCode::Unknown, "GitLab request {$what} could not be completed: {$e->getMessage()}");
+        // A GET that answers 5xx is retried, at most GET_RETRIES times: it is
+        // idempotent, so a second attempt cannot do anything the first did not.
+        // A POST is never replayed, because GitLab may already hold what it created.
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                $response = $this->http->send(new Request($method, $url, $headers, $body), [
+                    'allow_redirects' => false,
+                    'http_errors' => false,
+                ]);
+            } catch (GuzzleException $e) {
+                // Message only. The exception's request carries the credential header,
+                // so it is not chained where a logger could serialize it.
+                throw new GitException(GitErrorCode::Unknown, "GitLab request {$what} could not be completed: {$e->getMessage()}");
+            }
+            $answered = $response->getStatusCode();
+            if ($method !== 'GET' || $answered < 500 || $answered > 599 || $attempt >= self::GET_RETRIES) {
+                break;
+            }
+            usleep(self::RETRY_DELAY_MS * 1000 * ($attempt + 1));
         }
 
         $status = $response->getStatusCode();

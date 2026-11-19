@@ -6,6 +6,7 @@ namespace FancyGit\GitLab\Tests;
 
 use FancyGit\Error\GitErrorCode;
 use FancyGit\Error\GitException;
+use FancyGit\GitLab\GitLabClient;
 use FancyGit\GitLab\Tests\Support\FakeGitLab;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Psr7\Request;
@@ -57,11 +58,13 @@ abstract class ErrorMappingCase extends TestCase
 uses(ErrorMappingCase::class);
 
 test('http statuses map to the contract error codes', function (int $status, array $body, GitErrorCode $code, string $needle) {
-    $response = $body === []
+    $response = fn () => $body === []
         ? new Response($status, ['Content-Type' => 'text/html'], '<html>Bad Gateway</html>')
         : FakeGitLab::json($body, $status);
+    // A 5xx on a GET is retried (GetRetryTest), so it answers every attempt.
+    $attempts = $status >= 500 ? 1 + GitLabClient::GET_RETRIES : 1;
 
-    $e = $this->caught(new FakeGitLab([$response]));
+    $e = $this->caught(new FakeGitLab(array_map(static fn () => $response(), range(1, $attempts))));
 
     self::assertSame($code, $e->errorCode);
     self::assertSame($status, $e->getCode());

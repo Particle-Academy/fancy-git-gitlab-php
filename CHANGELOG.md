@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A GET that answers 5xx is retried, at most twice** (`GitLabClient::GET_RETRIES`,
+  100 ms then 200 ms apart), and each page of a `getAll()` walk on its own. A
+  single 502 from a load balancer used to fail the whole call. A POST is never
+  replayed, because GitLab may already hold what the first attempt created, and
+  4xx answers (including a 429) are reported at once as before. The Node twin
+  does the same. Nothing to do on upgrade; a persistent 5xx still throws the
+  same `GitException` with `GitErrorCode::Unknown`, after three attempts.
+- **`repository()` keeps the ref's `baseUrl`.** It dropped it, so a repository
+  read from a self-managed instance looked like a gitlab.com one, and the PHP
+  and Node twins disagreed. Found, with the retry, by the fancy-labs
+  git-adapter test.
+
 ### Security
 
 - **The keyset-pagination `Link` header is parsed with strpos / substr instead

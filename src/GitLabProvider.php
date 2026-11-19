@@ -51,7 +51,13 @@ final class GitLabProvider implements GitProvider
     {
         $data = $this->client->get($this->project($ref))->data;
 
-        return ['provider' => 'gitlab', 'owner' => $ref['owner'], 'name' => $ref['name'], 'id' => (string) $data['id'], 'webUrl' => $data['web_url'], 'defaultBranch' => $data['default_branch'], 'private' => $data['visibility'] !== 'public', 'description' => $data['description'] ?? null];
+        $repository = ['provider' => 'gitlab', 'owner' => $ref['owner'], 'name' => $ref['name'], 'id' => (string) $data['id'], 'webUrl' => $data['web_url'], 'defaultBranch' => $data['default_branch'], 'private' => $data['visibility'] !== 'public', 'description' => $data['description'] ?? null];
+        // The instance the ref named stays on the repository, as the Node twin keeps it.
+        if (($ref['baseUrl'] ?? '') !== '') {
+            $repository['baseUrl'] = $ref['baseUrl'];
+        }
+
+        return $repository;
     }
 
     public function listReviews(array $ref, array $query = []): array
