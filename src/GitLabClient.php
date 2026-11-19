@@ -44,6 +44,9 @@ final class GitLabClient
     /** GitLab's own ceiling; it silently serves 100 for anything larger. */
     public const MAX_PER_PAGE = 100;
 
+    /** Longest pagination `Link` header parsed. GitLab's are a few hundred bytes; a longer one is refused, so a hostile server cannot make the client do unbounded work. */
+    public const MAX_LINK_HEADER_LENGTH = 8 * 1024;
+
     private readonly string $baseUrl;
 
     private readonly ?\SensitiveParameterValue $token;
@@ -398,19 +401,79 @@ final class GitLabClient
         return preg_match('/^[1-9][0-9]{0,9}$/', $next) === 1 ? $next : null;
     }
 
+    /**
+     * The `rel="next"` target of a `Link` header (RFC 8288), or null.
+     *
+     * Linear by construction: strpos / substr / explode only. 0.3.0 matched the
+     * header with `/<([^>]*)>((?:\s*;\s*[^;,]+)*)/`, which is quadratic in V8 (the
+     * Node twin took 5.5 s on 100,000 `<`) and in PCRE exhausts the recursion
+     * limit on a long run of parameters, so `preg_match_all` returned false and
+     * the walk ended as if on the last page. The header comes from whatever
+     * server the base URL points at, so it is untrusted input.
+     *
+     * Several `Link` header lines are read joined with ", ", as the Node twin
+     * reads them. A header over {@see self::MAX_LINK_HEADER_LENGTH} is refused
+     * with an error, not ignored: ignoring it would end the walk early and
+     * return a list that reads as complete.
+     */
     private static function nextLink(ResponseInterface $response): ?string
     {
-        foreach ($response->getHeader('Link') as $line) {
-            preg_match_all('/<([^>]*)>((?:\s*;\s*[^;,]+)*)/', $line, $links, PREG_SET_ORDER);
-            foreach ($links as $link) {
-                if (preg_match('/;\s*rel\s*=\s*"?([^";]*)"?/i', $link[2], $rel) === 1
-                    && in_array('next', preg_split('/\s+/', strtolower(trim($rel[1]))) ?: [], true)) {
-                    return $link[1];
-                }
-            }
+        $header = $response->getHeaderLine('Link');
+        if ($header === '') {
+            return null;
+        }
+        if (strlen($header) > self::MAX_LINK_HEADER_LENGTH) {
+            throw new GitException(GitErrorCode::Unknown, 'GitLab sent a pagination Link header longer than '.self::MAX_LINK_HEADER_LENGTH.' characters. It was not parsed, and the list was not returned, because it may be incomplete.', $response->getStatusCode());
         }
 
-        return null;
+        $length = strlen($header);
+        $from = 0;
+        while (true) {
+            $open = strpos($header, '<', $from);
+            if ($open === false) {
+                return null;
+            }
+            $close = strpos($header, '>', $open + 1);
+            if ($close === false) {
+                return null;
+            }
+            $target = substr($header, $open + 1, $close - $open - 1);
+
+            // The parameters run from `>` to the next comma (a comma inside
+            // `<...>` belongs to the target and was skipped with it). Like the
+            // regex this replaced, they count only if they begin with `;`;
+            // otherwise the next link is searched for right after `>`.
+            $end = strpos($header, ',', $close + 1);
+            if ($end === false) {
+                $end = $length;
+            }
+            $params = substr($header, $close + 1, $end - $close - 1);
+            if (! str_starts_with(ltrim($params), ';')) {
+                $from = $close + 1;
+
+                continue;
+            }
+
+            foreach (array_slice(explode(';', $params), 1) as $param) {
+                $eq = strpos($param, '=');
+                if ($eq === false || strtolower(trim(substr($param, 0, $eq))) !== 'rel') {
+                    continue;
+                }
+                $value = trim(substr($param, $eq + 1));
+                if (str_starts_with($value, '"')) {
+                    $value = substr($value, 1);
+                }
+                $quote = strpos($value, '"');
+                if ($quote !== false) {
+                    $value = substr($value, 0, $quote);
+                }
+                if (in_array('next', preg_split('/\s+/', strtolower(trim($value))) ?: [], true)) {
+                    return $target;
+                }
+                break;
+            }
+            $from = $end;
+        }
     }
 
     /** A server-supplied link, accepted only if it points back inside this instance's API. */

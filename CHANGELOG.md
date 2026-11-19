@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The keyset-pagination `Link` header is parsed with strpos / substr instead
+  of a regex.** 0.3.0 (released) matched it with
+  `/<([^>]*)>((?:\s*;\s*[^;,]+)*)/`, the pattern that took the Node twin 5.5 s
+  on 100,000 `<`. PCRE does not go quadratic on that input, but on a long run
+  of parameters it exhausted its recursion limit: `preg_match_all` returned
+  false, and `getAll` returned the first page as if it were the whole list
+  (measured at 100,000 characters, with and without JIT). The header comes from
+  whatever server the base URL points at, so it is untrusted input.
+- **A `Link` header over 8 KB (`GitLabClient::MAX_LINK_HEADER_LENGTH`) is
+  refused with a `GitException` (`Unknown`)**, with the same message as the
+  Node twin, instead of parsed: refused rather than ignored, because ignoring
+  it would end `getAll` early with a list that reads as complete. GitLab's own
+  headers are a few hundred bytes. Which links are followed is unchanged, and
+  checking where a link points was already linear (`parse_url`).
+- 0.1.x and 0.2.0 do not contain this parser (they paginated through
+  `m4tthumphrey/php-gitlab-api`); only 0.3.0 is affected.
+  Consumers just upgrade; no API changed. The regression tests are the Node
+  twin's, ported case for case, plus one for the PHP-only truncation.
+
 ### Changed
 
 - **The tag workflow is now `.github/workflows/publish.yml`, named `Publish`**
